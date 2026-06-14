@@ -126,9 +126,10 @@ pub(super) fn extract_values(
                     self.params.push(Param { value, ty });
                     *expr = stmt::Expr::arg(position);
                 }
-                // A bare `#[document]` embed value (named by `document::lower`)
-                // binds as one param with an unknown type; the synthesize/check
-                // pass resolves it to the document column type.
+                // A document object value binds as one param with an unknown
+                // type; the synthesize/check pass resolves it to the document
+                // column type. This covers both statically typed embeds (named
+                // by `document::lower`) and dynamic JSON object literals.
                 stmt::Expr::Value(value @ stmt::Value::Object(_)) => {
                     let owned = std::mem::replace(value, stmt::Value::Null);
                     let position = self.params.len();
@@ -242,11 +243,13 @@ fn value_to_extracted_expr(
         stmt::Value::List(values)
             if bind_list_param
                 && values.iter().all(|v| {
-                    // A `Vec<scalar>` collection, or a `#[document]` collection
-                    // of embedded structs (named `Value::Object`s by
-                    // `document::lower`). Either way the whole list binds as one
-                    // parameter; the synthesize/check pass resolves its type.
-                    is_extractable_scalar(v) || matches!(v, stmt::Value::Object(_))
+                    // A `Vec<scalar>` collection, a `#[document]` collection of
+                    // embedded structs (named `Value::Object`s by
+                    // `document::lower`), or a dynamic JSON array. Either way
+                    // the whole list binds as one parameter; the
+                    // synthesize/check pass resolves its type.
+                    is_extractable_scalar(v)
+                        || matches!(v, stmt::Value::Object(_) | stmt::Value::List(_))
                 }) =>
         {
             let value = stmt::Value::List(values);

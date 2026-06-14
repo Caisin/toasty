@@ -389,6 +389,17 @@ fn ddb_expression(
                 path
             }
         }
+        stmt::Expr::Func(stmt::ExprFunc::JsonExtract(func)) => {
+            let path = json_extract_path(cx, attrs, primary, func);
+            // Like a bare bool column reference, a bool leaf in predicate
+            // position needs an explicit equality check.
+            if func.ty.is_bool() {
+                let true_val = attrs.ddb_value(aws_sdk_dynamodb::types::AttributeValue::Bool(true));
+                format!("{path} = {true_val}")
+            } else {
+                path
+            }
+        }
         stmt::Expr::And(expr_and) => {
             let operands = expr_and
                 .operands
@@ -434,6 +445,9 @@ fn ddb_expression(
             let inner = match &*expr_is_null.expr {
                 stmt::Expr::Reference(expr_reference) => column_alias(cx, attrs, expr_reference).1,
                 stmt::Expr::Project(expr_project) => document_path(cx, attrs, expr_project).0,
+                stmt::Expr::Func(stmt::ExprFunc::JsonExtract(func)) => {
+                    json_extract_path(cx, attrs, primary, func)
+                }
                 other => ddb_expression(cx, attrs, primary, other),
             };
             format!("attribute_not_exists({inner})")
@@ -532,6 +546,23 @@ fn document_path<'a>(
         path,
         leaf_ty.expect("projection into a document column is non-empty"),
     )
+}
+
+/// Resolves a dynamic JSON extraction to a DynamoDB document path. Dynamic JSON
+/// points carry literal path segment names, unlike static embed projections
+/// where segment names come from the app schema.
+fn json_extract_path(
+    cx: &ExprContext<'_, Schema>,
+    attrs: &mut ExprAttrs,
+    primary: bool,
+    func: &stmt::FuncJsonExtract,
+) -> String {
+    let mut path = ddb_expression(cx, attrs, primary, &func.base);
+    for segment in &func.path {
+        path.push('.');
+        path.push_str(attrs.document_segment(segment));
+    }
+    path
 }
 
 #[derive(Default)]

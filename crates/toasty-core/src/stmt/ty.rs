@@ -114,6 +114,9 @@ pub enum Type {
     /// An instance of a model
     Model(ModelId),
 
+    /// A dynamic JSON document value with no statically known schema.
+    Json,
+
     /// An instance of a foreign key for a specific relation
     ForeignKey(FieldId),
 
@@ -231,6 +234,11 @@ impl Type {
     /// Returns `true` if this is [`Type::String`].
     pub fn is_string(&self) -> bool {
         matches!(self, Self::String)
+    }
+
+    /// Returns `true` if this is [`Type::Json`].
+    pub fn is_json(&self) -> bool {
+        matches!(self, Self::Json)
     }
 
     /// Returns `true` if this is [`Type::Unit`].
@@ -445,6 +453,23 @@ impl Type {
         }
 
         match (self, other) {
+            // Any JSON-compatible value can flow into a dynamic JSON document.
+            (Type::Bool, Type::Json)
+            | (Type::String, Type::Json)
+            | (Type::I8, Type::Json)
+            | (Type::I16, Type::Json)
+            | (Type::I32, Type::Json)
+            | (Type::I64, Type::Json)
+            | (Type::U8, Type::Json)
+            | (Type::U16, Type::Json)
+            | (Type::U32, Type::Json)
+            | (Type::U64, Type::Json)
+            | (Type::F32, Type::Json)
+            | (Type::F64, Type::Json)
+            | (Type::Uuid, Type::Json)
+            | (Type::List(_), Type::Json)
+            | (Type::Json, Type::Json) => true,
+
             // Simple types must match exactly
             (Type::Bool, Type::Bool) => true,
             (Type::String, Type::String) => true,

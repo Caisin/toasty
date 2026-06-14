@@ -310,18 +310,30 @@ impl Value {
         }
         match self {
             Self::Null => true,
+            Self::Bool(_) if ty.is_json() => true,
             Self::Bool(_) => ty.is_bool(),
+            Self::I8(_) if ty.is_json() => true,
             Self::I8(_) => ty.is_i8(),
+            Self::I16(_) if ty.is_json() => true,
             Self::I16(_) => ty.is_i16(),
+            Self::I32(_) if ty.is_json() => true,
             Self::I32(_) => ty.is_i32(),
+            Self::I64(_) if ty.is_json() => true,
             Self::I64(_) => ty.is_i64(),
+            Self::U8(_) if ty.is_json() => true,
             Self::U8(_) => ty.is_u8(),
+            Self::U16(_) if ty.is_json() => true,
             Self::U16(_) => ty.is_u16(),
+            Self::U32(_) if ty.is_json() => true,
             Self::U32(_) => ty.is_u32(),
+            Self::U64(_) if ty.is_json() => true,
             Self::U64(_) => ty.is_u64(),
+            Self::F32(_) if ty.is_json() => true,
             Self::F32(_) => ty.is_f32(),
+            Self::F64(_) if ty.is_json() => true,
             Self::F64(_) => ty.is_f64(),
             Self::List(value) => match ty {
+                Type::Json => true,
                 Type::List(ty) => {
                     if value.is_empty() {
                         true
@@ -354,6 +366,7 @@ impl Value {
             // value: check each embed field against the entry of the same name
             // (an absent key is `None`, compatible with any field type).
             Self::Object(object) => match ty {
+                Type::Json => true,
                 Type::Model(id) => schema.fields(*id).iter().all(|field| {
                     let name = field.name().app_unwrap();
                     object
@@ -367,8 +380,10 @@ impl Value {
                 Type::SparseRecord(fields) => value.fields == *fields,
                 _ => false,
             },
+            Self::String(_) if ty.is_json() => true,
             Self::String(_) => ty.is_string(),
             Self::Bytes(_) => ty.is_bytes(),
+            Self::Uuid(_) if ty.is_json() => true,
             Self::Uuid(_) => ty.is_uuid(),
             #[cfg(feature = "rust_decimal")]
             Value::Decimal(_) => *ty == Type::Decimal,
@@ -420,14 +435,7 @@ impl Value {
             Value::SparseRecord(v) => Type::SparseRecord(v.fields.clone()),
             Value::Null => Type::Null,
             Value::Record(v) => Type::Record(v.fields.iter().map(Self::infer_ty).collect()),
-            // An object's inferred type, names dropped, is a positional record;
-            // the named document type is only known from the schema.
-            Value::Object(v) => Type::Record(
-                v.entries
-                    .iter()
-                    .map(|(_, value)| value.infer_ty())
-                    .collect(),
-            ),
+            Value::Object(_) => Type::Json,
             Value::String(_) => Type::String,
             Value::List(items) if items.is_empty() => Type::list(Type::Null),
             Value::List(items) => {

@@ -47,6 +47,12 @@ impl Value {
             (Type::F64, AV::N(val)) => stmt::Value::from(val.parse::<f64>().unwrap()),
             (Type::Bytes, AV::B(val)) => stmt::Value::Bytes(val.clone().into_inner()),
             (Type::Uuid, AV::S(val)) => stmt::Value::from(val.parse::<uuid::Uuid>().unwrap()),
+            (Type::Json, AV::L(items)) => stmt::Value::List(
+                items
+                    .iter()
+                    .map(|item| Value::from_ddb(app, &Type::Json, item).into_inner())
+                    .collect(),
+            ),
             (Type::List(elem), AV::L(items)) => {
                 let items = items
                     .iter()
@@ -54,6 +60,16 @@ impl Value {
                     .collect();
                 stmt::Value::List(items)
             }
+            (Type::Json, AV::M(map)) => stmt::Value::Object(stmt::ValueObject::from_json_vec(
+                map.iter()
+                    .map(|(key, attr)| {
+                        (
+                            key.clone(),
+                            Value::from_ddb(app, &Type::Json, attr).into_inner(),
+                        )
+                    })
+                    .collect(),
+            )),
             // A `#[document]` embed stored as a Map `M`: decode to the
             // positional record the engine consumes, in schema field order. A
             // key the writer omitted (an `Option` leaf holding `None`) decodes
@@ -69,6 +85,13 @@ impl Value {
                         .collect(),
                 ))
             }
+            (Type::Json, AV::S(val)) => stmt::Value::String(val.clone()),
+            (Type::Json, AV::N(val)) => val
+                .parse::<i64>()
+                .map(stmt::Value::I64)
+                .or_else(|_| val.parse::<u64>().map(stmt::Value::U64))
+                .unwrap_or_else(|_| stmt::Value::F64(val.parse::<f64>().unwrap())),
+            (Type::Json, AV::Bool(val)) => stmt::Value::Bool(*val),
             (_, AV::Null(_)) => stmt::Value::Null,
             // Scalars whose DynamoDB representation is their string form
             // (temporals, decimals): recover the typed value through the same
@@ -110,6 +133,7 @@ impl Value {
                 }
                 AV::M(map)
             }
+            (Type::Json, value) => Value(value.clone()).to_ddb(),
             (Type::List(elem), stmt::Value::List(items)) => AV::L(
                 items
                     .iter()
@@ -146,6 +170,12 @@ impl Value {
                     .collect::<Vec<_>>();
                 AV::L(items)
             }
+            stmt::Value::Object(object) => AV::M(
+                object
+                    .iter()
+                    .map(|(key, value)| (key.clone(), Value(value.clone()).to_ddb()))
+                    .collect(),
+            ),
             stmt::Value::Null => AV::Null(true),
             // Scalars whose DynamoDB representation is their string form
             // (temporals, decimals): the same `Type::cast` conversions the

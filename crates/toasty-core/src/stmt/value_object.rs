@@ -17,12 +17,26 @@ use super::Value;
 pub struct ValueObject {
     /// The named field values, in insertion order.
     pub entries: Vec<(String, Value)>,
+
+    /// Whether JSON encoding should omit entries whose value is [`Value::Null`].
+    pub omit_nulls: bool,
 }
 
 impl ValueObject {
-    /// Creates a `ValueObject` from a vector of `(key, value)` pairs.
+    /// Creates a schema-backed `ValueObject` from a vector of `(key, value)` pairs.
     pub fn from_vec(entries: Vec<(String, Value)>) -> Self {
-        Self { entries }
+        Self {
+            entries,
+            omit_nulls: true,
+        }
+    }
+
+    /// Creates a dynamic JSON `ValueObject` that preserves explicit null entries.
+    pub fn from_json_vec(entries: Vec<(String, Value)>) -> Self {
+        Self {
+            entries,
+            omit_nulls: false,
+        }
     }
 
     /// Iterates over the `(key, value)` entries in insertion order.

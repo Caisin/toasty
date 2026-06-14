@@ -222,12 +222,9 @@ fn serialize_json_extract(f: &mut super::Formatter<'_>, func: &stmt::FuncJsonExt
             // integers, reals), so a path read compares directly against a bound
             // parameter with no cast. The path is a single-quoted JSONPath like
             // `$.a.b`.
-            fmt!(
-                f,
-                "json_extract(" func.base.as_ref() ", '$"
-                Delimited(func.path.iter().map(|key| (".", key.as_str())), "")
-                "')"
-            );
+            fmt!(f, "json_extract(" func.base.as_ref() ", ");
+            write_json_path_literal(f, &func.path);
+            fmt!(f, ")");
         }
         Flavor::Mysql => serialize_mysql_json_extract(f, func),
         Flavor::Postgresql => {
@@ -237,13 +234,14 @@ fn serialize_json_extract(f: &mut super::Formatter<'_>, func: &stmt::FuncJsonExt
                 .path
                 .split_last()
                 .expect("json extract path has at least one key");
-            fmt!(
-                f,
-                "(" func.base.as_ref()
-                Delimited(parents.iter().map(|key| ("->'", key.as_str(), "'")), "")
-                "->>'" leaf.as_str() "')"
-                pg_json_cast(&func.ty).map(|cast| ("::", cast))
-            );
+            fmt!(f, "(" func.base.as_ref());
+            for parent in parents {
+                fmt!(f, "->");
+                write_sql_string_literal(f, parent);
+            }
+            fmt!(f, "->>");
+            write_sql_string_literal(f, leaf);
+            fmt!(f, ")" pg_json_cast(&func.ty).map(|cast| ("::", cast)));
         }
     }
 }
@@ -277,12 +275,56 @@ fn serialize_mysql_json_extract(f: &mut super::Formatter<'_>, func: &stmt::FuncJ
 /// Emits the bare `JSON_EXTRACT(col, '$.a.b')` every MySQL path read is built
 /// on, with the path as a single-quoted JSONPath argument.
 fn mysql_json_extract(f: &mut super::Formatter<'_>, func: &stmt::FuncJsonExtract) {
-    fmt!(
-        f,
-        "JSON_EXTRACT(" func.base.as_ref() ", '$"
-        Delimited(func.path.iter().map(|key| (".", key.as_str())), "")
-        "')"
-    );
+    fmt!(f, "JSON_EXTRACT(" func.base.as_ref() ", ");
+    write_json_path_literal(f, &func.path);
+    fmt!(f, ")");
+}
+
+fn write_json_path_literal(f: &mut super::Formatter<'_>, path: &[String]) {
+    let mut json_path = String::from("$");
+    for key in path {
+        write_json_path_segment(&mut json_path, key);
+    }
+    write_sql_string_literal(f, &json_path);
+}
+
+fn write_json_path_segment(dst: &mut String, key: &str) {
+    if is_plain_json_path_segment(key) {
+        dst.push('.');
+        dst.push_str(key);
+        return;
+    }
+
+    dst.push_str(".\"");
+    for ch in key.chars() {
+        match ch {
+            '\\' => dst.push_str("\\\\"),
+            '"' => dst.push_str("\\\""),
+            other => dst.push(other),
+        }
+    }
+    dst.push('"');
+}
+
+fn is_plain_json_path_segment(key: &str) -> bool {
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn write_sql_string_literal(f: &mut super::Formatter<'_>, value: &str) {
+    f.dst.push('\'');
+    for ch in value.chars() {
+        if ch == '\'' {
+            f.dst.push('\'');
+        }
+        f.dst.push(ch);
+    }
+    f.dst.push('\'');
 }
 
 /// The MySQL `CAST(... AS <type>)` target wrapped around a

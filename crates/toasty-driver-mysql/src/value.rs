@@ -240,9 +240,10 @@ fn typed_mysql_value_to_core(
             stmt::Type::List(elem) => convert_or_null(value, |bytes: Vec<u8>| {
                 json_bytes_to_value_list(schema, &bytes, elem)
             }),
-            // A `#[document]` bare embed (`Type::Model`): decode the JSON object
-            // back to the positional record the engine loads.
-            stmt::Type::Model(_) => convert_or_null(value, |bytes: Vec<u8>| {
+            // Document columns decode through the JSON codec. Static embeds
+            // (`Type::Model`) become positional records; dynamic JSON
+            // (`Type::Json`) keeps its structural object/list/scalar form.
+            stmt::Type::Model(_) | stmt::Type::Json => convert_or_null(value, |bytes: Vec<u8>| {
                 json_bytes_to_value(schema, &bytes, ty)
             }),
             _ => todo!("MySQL JSON column with stmt::Type {ty:#?}"),

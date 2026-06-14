@@ -327,6 +327,21 @@ fn json_extract_mysql_casts_by_leaf_type() {
         .assert_eq(&render_mysql(json_extract(&["a", "b"], stmt::Type::String)));
 }
 
+/// SQLite and MySQL paths quote segments that are not simple identifiers so a
+/// dynamic JSON point like `a.b/quoted"key` addresses two literal keys rather
+/// than splitting on `.` or breaking the SQL string literal.
+#[test]
+fn json_extract_quotes_special_path_segments() {
+    let expr = json_extract(&["a.b", "quoted\"key", "owner's"], stmt::Type::String);
+
+    expect![r#"VALUES (json_extract(?1, '$."a.b"."quoted\"key"."owner''s"'));"#]
+        .assert_eq(&render_sqlite(expr.clone()));
+    expect![
+        r#"VALUES ROW(CAST(JSON_UNQUOTE(JSON_EXTRACT(?, '$."a.b"."quoted\"key"."owner''s"')) AS CHAR));"#
+    ]
+    .assert_eq(&render_mysql(expr));
+}
+
 /// A temporal leaf on MySQL casts to a `(6)`-precision type so the microseconds
 /// the JSON codec writes survive the comparison (a bare `AS DATETIME` would
 /// truncate to whole seconds).

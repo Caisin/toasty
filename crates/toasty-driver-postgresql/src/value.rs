@@ -170,9 +170,9 @@ impl Value {
                 None => return Self(stmt::Value::Null),
             }
         } else if column.type_() == &Type::JSONB || column.type_() == &Type::JSON {
-            // `#[document]` columns. Decode the raw JSON wire bytes straight to
-            // the positional `Value::Record` the engine loads, resolving the
-            // embed's fields from `expected_ty` + `schema`.
+            // Document columns. Decode the raw JSON wire bytes straight to the
+            // value shape the engine loads: positional records for static
+            // embeds, structural values for dynamic JSON.
             let raw = match row.get::<usize, Option<RawBytes<'_>>>(index) {
                 Some(RawBytes(raw)) => raw,
                 None => return Self(stmt::Value::Null),

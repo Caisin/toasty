@@ -71,8 +71,10 @@ impl Serialize for Encode<'_> {
             Value::Object(object) => {
                 let mut map = s.serialize_map(None)?;
                 for (k, v) in object.iter() {
-                    // `Option::None` -> omit the key entirely.
-                    if v.is_null() {
+                    // Statically typed `#[document]` embeds omit `Option::None`
+                    // fields. Dynamic JSON objects preserve explicit null
+                    // entries.
+                    if object.omit_nulls && v.is_null() {
                         continue;
                     }
                     map.serialize_entry(k, &Encode(v))?;
@@ -165,7 +167,7 @@ impl<'de> Visitor<'de> for ValueVisitor<'_> {
 
     fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Value, E> {
         match self.ty {
-            stmt::Type::Bool => Ok(Value::Bool(v)),
+            stmt::Type::Json | stmt::Type::Bool => Ok(Value::Bool(v)),
             other => Err(E::custom(format!(
                 "unexpected JSON bool for type {other:?}"
             ))),
@@ -182,6 +184,7 @@ impl<'de> Visitor<'de> for ValueVisitor<'_> {
 
     fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Value, E> {
         match self.ty {
+            stmt::Type::Json => Ok(Value::F64(v)),
             stmt::Type::F32 => Ok(Value::F32(v as f32)),
             stmt::Type::F64 => Ok(Value::F64(v)),
             other => Err(E::custom(format!(
@@ -192,7 +195,7 @@ impl<'de> Visitor<'de> for ValueVisitor<'_> {
 
     fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Value, E> {
         match self.ty {
-            stmt::Type::String => Ok(Value::String(v.to_owned())),
+            stmt::Type::Json | stmt::Type::String => Ok(Value::String(v.to_owned())),
             stmt::Type::Uuid => Ok(Value::Uuid(v.parse().map_err(E::custom)?)),
             #[cfg(feature = "rust_decimal")]
             stmt::Type::Decimal => Ok(Value::Decimal(v.parse().map_err(E::custom)?)),
@@ -216,6 +219,7 @@ impl<'de> Visitor<'de> for ValueVisitor<'_> {
 
     fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Value, A::Error> {
         match self.ty {
+            stmt::Type::Json => read_dynamic_seq(seq, self.schema),
             stmt::Type::List(elem) => read_seq(seq, elem, self.schema),
             other => Err(A::Error::custom(format!(
                 "unexpected JSON array for type {other:?}"
@@ -227,6 +231,18 @@ impl<'de> Visitor<'de> for ValueVisitor<'_> {
         // A `#[document]` embed's field layout, in declaration order, resolved
         // on demand from the embedded model. `Type::Model` is the shape carried
         // at the `stmt::Type` level.
+        if matches!(self.ty, stmt::Type::Json) {
+            let mut entries = Vec::new();
+            while let Some(key) = map.next_key::<String>()? {
+                let value = map.next_value_seed(Seed {
+                    ty: &stmt::Type::Json,
+                    schema: self.schema,
+                })?;
+                entries.push((key, value));
+            }
+            return Ok(Value::Object(stmt::ValueObject::from_json_vec(entries)));
+        }
+
         let fields = match self.ty {
             stmt::Type::Model(embed_id) => self.schema.fields(*embed_id),
             other => {
@@ -276,6 +292,17 @@ fn int_to_value<E: serde::de::Error>(ty: &stmt::Type, v: i128) -> Result<Value, 
     }
 
     Ok(match ty {
+        stmt::Type::Json => {
+            if let Ok(v) = i64::try_from(v) {
+                Value::I64(v)
+            } else if let Ok(v) = u64::try_from(v) {
+                Value::U64(v)
+            } else {
+                return Err(E::custom(format!(
+                    "JSON integer {v} is out of range for dynamic JSON"
+                )));
+            }
+        }
         stmt::Type::I8 => Value::I8(checked(v, ty)?),
         stmt::Type::I16 => Value::I16(checked(v, ty)?),
         stmt::Type::I32 => Value::I32(checked(v, ty)?),
@@ -304,6 +331,20 @@ fn read_seq<'de, A: SeqAccess<'de>>(
     let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0));
     while let Some(value) = seq.next_element_seed(Seed {
         ty: elem_ty,
+        schema,
+    })? {
+        items.push(value);
+    }
+    Ok(Value::List(items))
+}
+
+fn read_dynamic_seq<'de, A: SeqAccess<'de>>(
+    mut seq: A,
+    schema: &app::Schema,
+) -> Result<Value, A::Error> {
+    let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+    while let Some(value) = seq.next_element_seed(Seed {
+        ty: &stmt::Type::Json,
         schema,
     })? {
         items.push(value);

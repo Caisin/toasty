@@ -46,9 +46,10 @@ impl Value {
             Some(SqlValue::Text(value)) => match ty {
                 stmt::Type::Uuid => stmt::Value::Uuid(value.parse().expect("text is a valid uuid")),
                 stmt::Type::List(elem) => json_text_to_value_list(schema, &value, elem),
-                // A bare `#[document]` embed column (`Type::Model`) decodes
-                // straight to the positional `Value::Record` the engine loads.
-                stmt::Type::Model(_) => json_text_to_value(schema, &value, ty),
+                // Document columns decode through the JSON codec. Static embeds
+                // (`Type::Model`) become positional records; dynamic JSON
+                // (`Type::Json`) keeps its structural object/list/scalar form.
+                stmt::Type::Model(_) | stmt::Type::Json => json_text_to_value(schema, &value, ty),
                 _ => stmt::Value::String(value),
             },
             Some(SqlValue::Blob(value)) => match ty {

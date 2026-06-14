@@ -453,11 +453,11 @@ pub(super) fn merge(a: &Ty, b: &Ty) -> Ty {
         // Lists — merge element types
         (Ty::List(a_elem), Ty::List(b_elem)) => Ty::List(Box::new(merge(a_elem, b_elem))),
 
-        // A `#[document]` collection binds as a `Value::List` (the JSON array's
-        // internal shape) while its column storage type is the opaque scalar
-        // `Document`. The schema type is authoritative, so the list resolves to
-        // the document column type — the value keeps its list shape, only its
-        // type resolves. This lets `check` type a document column like any other.
+        // A document collection or dynamic JSON array binds as a `Value::List`
+        // while its column storage type is the opaque scalar `Document`. The
+        // schema type is authoritative, so the list resolves to the document
+        // column type — the value keeps its list shape, only its type resolves.
+        // This lets `check` type a document column like any other.
         (Ty::List(_), col @ Ty::Column(db::Type::Document { .. }))
         | (col @ Ty::Column(db::Type::Document { .. }), Ty::List(_)) => col.clone(),
 

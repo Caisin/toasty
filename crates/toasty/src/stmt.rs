@@ -35,6 +35,11 @@ mod into_statement;
 pub use into_statement::IntoStatement;
 
 #[cfg(feature = "serde")]
+mod dynamic_json;
+#[cfg(feature = "serde")]
+pub use dynamic_json::{JsonLeaf, JsonPath};
+
+#[cfg(feature = "serde")]
 mod json;
 #[cfg(feature = "serde")]
 pub use json::Json;

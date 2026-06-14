@@ -221,9 +221,10 @@ impl BuildSchema<'_> {
                 }
 
                 // `#[document]` storage covers a bare embedded struct
-                // (`Type::Model`) and a collection of embedded structs
-                // (`Type::List(Model)`); both are gated by the same capability.
-                // A plain `Vec<scalar>` has its own gate.
+                // (`Type::Model`), a collection of embedded structs
+                // (`Type::List(Model)`), and a dynamic JSON value
+                // (`Type::Json`); all are gated by the same capability. A
+                // plain `Vec<scalar>` has its own gate.
                 let field_name = || {
                     field.name.app.as_deref().unwrap_or_else(|| {
                         panic!(
@@ -233,7 +234,8 @@ impl BuildSchema<'_> {
                     })
                 };
 
-                let is_document = document_embed_id(&primitive.ty).is_some();
+                let is_document = document_embed_id(&primitive.ty).is_some()
+                    || matches!(primitive.ty, stmt::Type::Json);
 
                 if is_document {
                     if !self.db.document_collections {

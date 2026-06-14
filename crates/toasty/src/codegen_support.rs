@@ -12,6 +12,8 @@ pub mod version;
 pub mod via;
 
 pub use crate::schema::inventory;
+#[cfg(feature = "serde")]
+pub use crate::stmt::{JsonLeaf, JsonPath};
 pub use crate::{
     Db, Error, Executor, Result, Statement,
     schema::{
